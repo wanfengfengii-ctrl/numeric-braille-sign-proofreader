@@ -1,0 +1,25 @@
+# 电梯厅数字房间牌六点盲文校样台
+# 用法：
+#   WEB_PORT=8080 docker compose up web        # 启动校样台（宿主端口由 WEB_PORT 覆盖，默认 3000）
+#   docker compose run --rm verify             # 一次性验收：Vitest 单元测试 + Playwright 端到端
+services:
+  web:
+    build: .
+    command: npm run dev -- --host 0.0.0.0 --port 3000
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  verify:
+    build: .
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://web:3000
+    command: npm run verify
