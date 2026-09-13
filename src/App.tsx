@@ -13,7 +13,47 @@ import {
   parseTranscript,
   validateCode,
 } from './braille';
+import {
+  type DraftError,
+  type ProofingDraft,
+  createDraft,
+  describeDraftError,
+  parseDraft,
+  serializeDraft,
+} from './draft';
 import { DotGrid } from './DotGrid';
+
+/** 本地草稿的 localStorage 键 */
+const DRAFT_STORAGE_KEY = 'braille-proofing-station/draft/v1';
+
+type DraftPrompt =
+  | { state: 'none' }
+  | { state: 'restore'; draft: ProofingDraft }
+  | { state: 'corrupt'; error: DraftError };
+
+/** 启动时读取本地草稿：无草稿照常启动；损坏草稿只提示，不还原任何字段 */
+function readStoredDraft(): DraftPrompt {
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (raw === null) return { state: 'none' };
+    const parsed = parseDraft(raw);
+    return parsed.ok
+      ? { state: 'restore', draft: parsed.draft }
+      : { state: 'corrupt', error: parsed.error };
+  } catch {
+    // 存储不可用（如隐私模式）时按无草稿处理
+    return { state: 'none' };
+  }
+}
+
+/** 草稿内容摘要，帮助校样员确认是否为未送厂的现场 */
+function draftSummary(draft: ProofingDraft): string {
+  const parts: string[] = [];
+  if (draft.input !== '') parts.push(`明眼稿「${draft.input}」`);
+  if (draft.cells.length > 0) parts.push(`抄录 ${draft.cells.length} 单元`);
+  if (draft.transcript !== '') parts.push('含点位串输入');
+  return parts.join('，');
+}
 
 type Verdict =
   | { state: 'idle'; message: string }
@@ -28,6 +68,7 @@ export default function App() {
   const [focusIdx, setFocusIdx] = useState<number | null>(null);
   const [transcript, setTranscript] = useState('');
   const [transcriptError, setTranscriptError] = useState<TranscriptError | null>(null);
+  const [draftPrompt, setDraftPrompt] = useState<DraftPrompt>(readStoredDraft);
   const cellRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const validation = useMemo(() => validateCode(input), [input]);
@@ -83,6 +124,46 @@ export default function App() {
       cellRefs.current[firstDiff]?.scrollIntoView({ block: 'nearest' });
     }
   }, [firstDiff]);
+
+  // 输入或抄录变化后自动覆盖本地草稿；恢复/损坏提示待决期间暂停写入，
+  // 避免空白工作区抢先覆盖待恢复的草稿
+  useEffect(() => {
+    if (draftPrompt.state !== 'none') return;
+    try {
+      if (input === '' && cells.length === 0 && transcript === '') {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } else {
+        localStorage.setItem(
+          DRAFT_STORAGE_KEY,
+          serializeDraft(createDraft(input, cells, transcript)),
+        );
+      }
+    } catch {
+      // 存储不可用时草稿功能静默降级，不影响校样
+    }
+  }, [input, cells, transcript, draftPrompt]);
+
+  // 恢复草稿：一次性还原三项数据，判定由上面的 useMemo 管线重新计算
+  const restoreDraft = () => {
+    if (draftPrompt.state !== 'restore') return;
+    const { draft } = draftPrompt;
+    setInput(draft.input);
+    setCells(draft.cells);
+    setTranscript(draft.transcript);
+    setTranscriptError(null);
+    setFocusIdx(null);
+    setDraftPrompt({ state: 'none' });
+  };
+
+  // 放弃草稿：清除缓存，工作区保持空白
+  const discardDraft = () => {
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {
+      // 存储不可用时仅关闭提示
+    }
+    setDraftPrompt({ state: 'none' });
+  };
 
   const toggleDot = (index: number, dot: Dot) =>
     setCells((prev) => prev.map((c, i) => (i === index ? c ^ dotMask(dot) : c)));
@@ -151,6 +232,40 @@ export default function App() {
           连字符 36 ｜ 斜杠 34 ｜ 空格为空单元
         </p>
       </header>
+
+      {draftPrompt.state !== 'none' && (
+        <div
+          role={draftPrompt.state === 'corrupt' ? 'alert' : 'status'}
+          data-testid="draft-prompt"
+          data-state={draftPrompt.state}
+          className={`draft-prompt ${draftPrompt.state}`}
+        >
+          {draftPrompt.state === 'restore' ? (
+            <>
+              <span>检测到未送厂的本地草稿（{draftSummary(draftPrompt.draft)}），是否恢复？</span>
+              <span className="draft-actions">
+                <button type="button" data-testid="restore-draft" onClick={restoreDraft}>
+                  恢复草稿
+                </button>
+                <button type="button" data-testid="discard-draft" onClick={discardDraft}>
+                  放弃草稿
+                </button>
+              </span>
+            </>
+          ) : (
+            <>
+              <span>
+                本地草稿已损坏（{describeDraftError(draftPrompt.error)}），无法恢复；可放弃后从空白开始。
+              </span>
+              <span className="draft-actions">
+                <button type="button" data-testid="discard-draft" onClick={discardDraft}>
+                  放弃草稿
+                </button>
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       <div role="status" data-testid="verdict" data-state={verdict.state} className={`verdict ${verdict.state}`}>
         {verdict.message}
