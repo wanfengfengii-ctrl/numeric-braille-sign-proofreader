@@ -77,6 +77,8 @@ export default function App() {
   const [history, setHistory] = useState<CellHistory>(() => createHistory([]));
   const cells = history.present;
   const [focusIdx, setFocusIdx] = useState<number | null>(null);
+  // 撤销/重做导航序号：每次跨越历史边界自增，用于把键盘焦点送到首差单元
+  const [historyNav, setHistoryNav] = useState(0);
   const [transcript, setTranscript] = useState('');
   const [transcriptError, setTranscriptError] = useState<TranscriptError | null>(null);
   const [draftPrompt, setDraftPrompt] = useState<DraftPrompt>(readStoredDraft);
@@ -136,6 +138,15 @@ export default function App() {
     }
   }, [firstDiff]);
 
+  // 撤销/重做跨越历史边界后，键盘焦点直接落到新现场的首个差异单元；
+  // 首差落在抄录缺失位（无对应可编辑格）或已一致时不抢焦点。
+  // 仅由历史导航序号触发，普通编辑与导入不改变键盘焦点。
+  useEffect(() => {
+    if (historyNav === 0 || firstDiff === null || firstDiff >= cells.length) return;
+    const el = cellRefs.current[firstDiff];
+    if (el) el.focus();
+  }, [historyNav, firstDiff, cells.length]);
+
   // 输入或抄录变化后自动覆盖本地草稿；恢复/损坏提示待决期间暂停写入，
   // 避免空白工作区抢先覆盖待恢复的草稿
   useEffect(() => {
@@ -181,15 +192,16 @@ export default function App() {
   const applyCellsEdit = (edit: (prev: Cell[]) => Cell[]) =>
     setHistory((prev) => recordEdit(prev, edit(prev.present)));
 
-  // 撤销/重做只移动历史指针；反向解读、首差定位与送厂结论随当前 Cell 数组重算
+  // 撤销/重做只移动历史指针；反向解读、首差定位与送厂结论随当前 Cell 数组重算。
+  // 自增导航序号，由首差聚焦效应把键盘焦点送到新现场的首个差异单元。
   const undoTranscript = () => {
     setHistory(undoEdit);
-    setFocusIdx(null);
+    setHistoryNav((n) => n + 1);
   };
 
   const redoTranscript = () => {
     setHistory(redoEdit);
-    setFocusIdx(null);
+    setHistoryNav((n) => n + 1);
   };
 
   const toggleDot = (index: number, dot: Dot) =>

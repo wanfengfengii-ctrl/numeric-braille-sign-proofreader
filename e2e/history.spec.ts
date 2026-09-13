@@ -135,6 +135,97 @@ test('抄录历史：撤销后产生新编辑时无法重做', async ({ page }) 
   await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'match');
 });
 
+test('抄录历史：再次导入与当前现场相同的点位串不产生空步骤', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('code-input').fill('12');
+  await importTranscript(page, TRANSCRIPT_12);
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'match');
+  await expect(page.getByTestId('undo-cells')).toBeEnabled();
+  await expect(page.getByTestId('redo-cells')).toBeDisabled();
+
+  // 房间牌已有完整抄录时再次导入相同点位串：现场毫无变化
+  await importTranscript(page, TRANSCRIPT_12);
+  await expect(page.getByTestId('actual-cell-2')).toBeVisible();
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'match');
+
+  // 不推进有效编辑历史：一次撤销即回到导入前的空现场，
+  // 而非先撤销一个“撤销后现场毫无变化”的空步骤
+  await page.getByTestId('undo-cells').click();
+  await expect(page.getByTestId('actual-cell-0')).toBeHidden();
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'idle');
+  await expect(page.getByTestId('undo-cells')).toBeDisabled();
+});
+
+test('抄录历史：撤销后导入与当前现场相同的点位串保留重做分支', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('code-input').fill('12-3/4 5');
+
+  // 先手工抄录一格数字标志，再一次性导入完整点位串
+  await page.getByTestId('add-cell').click();
+  for (const d of SIGN) await page.keyboard.press(String(d));
+  await importTranscript(page, TRANSCRIPT_12_3_4_5);
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'match');
+
+  // 撤销抄录：现场回到导入前的单格，重做分支出现
+  await page.getByTestId('undo-cells').click();
+  await expect(page.getByTestId('actual-cell-0')).toBeVisible();
+  await expect(page.getByTestId('actual-cell-1')).toBeHidden();
+  await expect(page.getByTestId('redo-cells')).toBeEnabled();
+
+  // 导入与当前现场完全相同的点位串（仅一格数字标志）：抄录内容不变，
+  // 原有重做机会必须保留
+  await importTranscript(page, '3456');
+  await expect(page.getByTestId('actual-cell-0')).toBeVisible();
+  await expect(page.getByTestId('actual-cell-1')).toBeHidden();
+  await expect(page.getByTestId('transcript-error')).toBeHidden();
+  await expect(page.getByTestId('redo-cells')).toBeEnabled();
+
+  // 可恢复分支内容不变：重做仍恢复整条导入带
+  await page.getByTestId('redo-cells').click();
+  await expect(page.getByTestId('actual-cell-11')).toBeVisible();
+  await expect(page.getByTestId('decoded-code')).toHaveText('12-3/4 5');
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'match');
+});
+
+test('抄录历史：撤销后出现首个差异单元时键盘焦点直接落到该格', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('code-input').fill('12');
+
+  // 导入末格多点 5 的抄录：首差在第 3 单元
+  await importTranscript(page, '3456|1|125');
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'mismatch');
+
+  // 指针修正为一致（焦点在点位按钮上），再撤销回到差异现场
+  await page.getByTestId('actual-cell-2').locator('[data-dot="5"]').click();
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'match');
+  await page.getByTestId('undo-cells').click();
+
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'mismatch');
+  await expect(page.getByTestId('actual-cell-2')).toHaveAttribute('data-diff', 'true');
+  // 不只滚动高亮：键盘焦点直接落到首个差异单元，可立即按 5 返工
+  await expect(page.getByTestId('actual-cell-2')).toBeFocused();
+  await page.keyboard.press('5');
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'match');
+});
+
+test('抄录历史：重做后出现首个差异单元时键盘焦点直接落到该格', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('code-input').fill('12');
+  await importTranscript(page, TRANSCRIPT_12);
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'match');
+
+  // 制造差异后撤销回一致：重做将重新进入差异现场
+  await page.getByTestId('actual-cell-2').locator('[data-dot="5"]').click();
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'mismatch');
+  await page.getByTestId('undo-cells').click();
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'match');
+
+  await page.getByTestId('redo-cells').click();
+  await expect(page.getByTestId('verdict')).toHaveAttribute('data-state', 'mismatch');
+  await expect(page.getByTestId('actual-cell-2')).toHaveAttribute('data-diff', 'true');
+  await expect(page.getByTestId('actual-cell-2')).toBeFocused();
+});
+
 test('抄录历史：刷新恢复草稿后没有旧会话历史', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('code-input').fill('12');

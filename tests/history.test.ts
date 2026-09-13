@@ -125,6 +125,50 @@ describe('抄录历史：分支截断', () => {
   });
 });
 
+describe('抄录历史：无变化编辑', () => {
+  it('已有完整抄录时再次导入相同点集合，不推进有效编辑历史', () => {
+    // 房间牌已有完整抄录（如新起点或刚恢复的草稿），不可撤销、不可重做
+    const complete = [NUMBER_SIGN, D('1'), D('2')];
+    const history = createHistory(complete);
+
+    // 再次导入与当前现场相同的点位串：历史对象原样返回，不产生撤销后毫无变化的空步骤
+    expect(recordEdit(history, [NUMBER_SIGN, D('1'), D('2')])).toBe(history);
+    expect(history.past).toEqual([]);
+    expect(canUndo(history)).toBe(false);
+    expect(canRedo(history)).toBe(false);
+    expect(history.present).toEqual(complete);
+  });
+
+  it('单元数相同但掩码不同仍属有效编辑，照常推进历史', () => {
+    let history = createHistory([NUMBER_SIGN]);
+    history = recordEdit(history, [D('1')]);
+    expect(history.past.length).toBe(1);
+    expect(history.present).toEqual([D('1')]);
+  });
+
+  it('撤销后导入与当前现场相同的点集合时保留可重做分支', () => {
+    // 先手工抄录一格，再成功导入完整点位串
+    let history = createHistory([NUMBER_SIGN]);
+    history = recordEdit(history, [NUMBER_SIGN, D('1'), D('2')]);
+
+    // 撤销抄录：现场回到导入前的单格，重做分支出现
+    history = undoEdit(history);
+    expect(history.present).toEqual([NUMBER_SIGN]);
+    expect(canRedo(history)).toBe(true);
+
+    // 导入与当前现场相同的点位串：抄录内容未变，历史原样返回，重做机会不得被清除
+    const noop = recordEdit(history, [NUMBER_SIGN]);
+    expect(noop).toBe(history);
+    expect(noop.present).toEqual([NUMBER_SIGN]);
+    expect(canRedo(noop)).toBe(true);
+
+    // 可恢复分支内容不受影响：重做仍回到完整导入现场
+    history = redoEdit(noop);
+    expect(history.present).toEqual([NUMBER_SIGN, D('1'), D('2')]);
+    expect(canRedo(history)).toBe(false);
+  });
+});
+
 describe('抄录历史：容量边界', () => {
   it(`撤销步数封顶 ${HISTORY_LIMIT}，超出时丢弃最旧记录`, () => {
     let history = createHistory([]);

@@ -33,11 +33,28 @@ export const canUndo = (history: CellHistory): boolean => history.past.length > 
 export const canRedo = (history: CellHistory): boolean => history.future.length > 0;
 
 /**
+ * 比较两次现场的点集合：单元数量或任一掩码不同即视为有变化。
+ * Cell 为位掩码，逐位比较即等价于逐点比较。
+ */
+function cellsEqual(a: readonly Cell[], b: readonly Cell[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
  * 记录一次有效编辑：当前现场压入过去栈（超出上限丢弃最旧），
  * 新现场成为当前现场，撤销后未重做的分支整体丢弃。
  * 快照复制为独立数组，后续修改来源数组不影响历史。
+ *
+ * 新现场与当前现场点集合完全相同（如再次导入相同点位串）时不是有效编辑：
+ * 原样返回当前历史，既不推进编辑历史，也不清除可恢复的重做分支。
  */
 export function recordEdit(history: CellHistory, next: readonly Cell[]): CellHistory {
+  if (cellsEqual(history.present, next)) return history;
   const past = [...history.past, history.present];
   if (past.length > HISTORY_LIMIT) past.splice(0, past.length - HISTORY_LIMIT);
   return { past, present: [...next], future: [] };
