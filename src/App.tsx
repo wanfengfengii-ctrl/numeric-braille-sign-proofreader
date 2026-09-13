@@ -21,6 +21,15 @@ import {
   parseDraft,
   serializeDraft,
 } from './draft';
+import {
+  type CellHistory,
+  canRedo,
+  canUndo,
+  createHistory,
+  recordEdit,
+  redoEdit,
+  undoEdit,
+} from './history';
 import { DotGrid } from './DotGrid';
 
 /** 本地草稿的 localStorage 键 */
@@ -64,7 +73,9 @@ type Verdict =
 
 export default function App() {
   const [input, setInput] = useState('');
-  const [cells, setCells] = useState<Cell[]>([]);
+  // 抄录单元纳入有上限的历史：撤销/重做只移动历史指针，判定随当前现场重算
+  const [history, setHistory] = useState<CellHistory>(() => createHistory([]));
+  const cells = history.present;
   const [focusIdx, setFocusIdx] = useState<number | null>(null);
   const [transcript, setTranscript] = useState('');
   const [transcriptError, setTranscriptError] = useState<TranscriptError | null>(null);
@@ -143,12 +154,13 @@ export default function App() {
     }
   }, [input, cells, transcript, draftPrompt]);
 
-  // 恢复草稿：一次性还原三项数据，判定由上面的 useMemo 管线重新计算
+  // 恢复草稿：一次性还原三项数据，判定由上面的 useMemo 管线重新计算；
+  // 历史以恢复现场为新的起点，不带入上一会话的撤销记录
   const restoreDraft = () => {
     if (draftPrompt.state !== 'restore') return;
     const { draft } = draftPrompt;
     setInput(draft.input);
-    setCells(draft.cells);
+    setHistory(createHistory(draft.cells));
     setTranscript(draft.transcript);
     setTranscriptError(null);
     setFocusIdx(null);
@@ -165,38 +177,53 @@ export default function App() {
     setDraftPrompt({ state: 'none' });
   };
 
+  // 点位切换、添加、插入、删除、清空与成功导入统一经此记录为一步历史
+  const applyCellsEdit = (edit: (prev: Cell[]) => Cell[]) =>
+    setHistory((prev) => recordEdit(prev, edit(prev.present)));
+
+  // 撤销/重做只移动历史指针；反向解读、首差定位与送厂结论随当前 Cell 数组重算
+  const undoTranscript = () => {
+    setHistory(undoEdit);
+    setFocusIdx(null);
+  };
+
+  const redoTranscript = () => {
+    setHistory(redoEdit);
+    setFocusIdx(null);
+  };
+
   const toggleDot = (index: number, dot: Dot) =>
-    setCells((prev) => prev.map((c, i) => (i === index ? c ^ dotMask(dot) : c)));
+    applyCellsEdit((prev) => prev.map((c, i) => (i === index ? c ^ dotMask(dot) : c)));
 
   const addCell = () => {
-    setCells((prev) => [...prev, 0]);
+    applyCellsEdit((prev) => [...prev, 0]);
     setFocusIdx(cells.length);
   };
 
   const insertCell = (index: number) => {
-    setCells((prev) => [...prev.slice(0, index), 0, ...prev.slice(index)]);
+    applyCellsEdit((prev) => [...prev.slice(0, index), 0, ...prev.slice(index)]);
     setFocusIdx(index);
   };
 
   const removeCell = (index: number) => {
     const nextLen = cells.length - 1;
-    setCells((prev) => prev.filter((_, i) => i !== index));
+    applyCellsEdit((prev) => prev.filter((_, i) => i !== index));
     setFocusIdx(nextLen > 0 ? Math.min(index, nextLen - 1) : null);
   };
 
   const clearCells = () => {
-    setCells([]);
+    applyCellsEdit(() => []);
     setFocusIdx(null);
   };
 
-  // 点位串导入：成功则一次性替换当前抄录；失败保留原抄录与判定
+  // 点位串导入：成功则一次性替换当前抄录并记为一步历史；失败保留原抄录、判定与历史
   const importTranscript = () => {
     const parsed = parseTranscript(transcript);
     if (!parsed.ok) {
       setTranscriptError(parsed.error);
       return;
     }
-    setCells(parsed.cells);
+    applyCellsEdit(() => parsed.cells);
     setFocusIdx(null);
     setTranscriptError(null);
   };
@@ -325,8 +352,26 @@ export default function App() {
             <button type="button" data-testid="clear-cells" onClick={clearCells} disabled={cells.length === 0}>
               清空
             </button>
+            <button
+              type="button"
+              data-testid="undo-cells"
+              onClick={undoTranscript}
+              disabled={!canUndo(history)}
+            >
+              撤销抄录
+            </button>
+            <button
+              type="button"
+              data-testid="redo-cells"
+              onClick={redoTranscript}
+              disabled={!canRedo(history)}
+            >
+              重做抄录
+            </button>
           </div>
-          <p className="hint">点击圆点，或聚焦单元后按 1–6 切换点位；←/→ 移动，Enter 插入，Backspace 删除。</p>
+          <p className="hint">
+            点击圆点，或聚焦单元后按 1–6 切换点位；←/→ 移动，Enter 插入，Backspace 删除。误操作可用“撤销抄录 / 重做抄录”回退与恢复。
+          </p>
           <div className="import-area">
             <label className="field-label" htmlFor="transcript-input">
               点位串导入
