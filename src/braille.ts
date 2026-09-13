@@ -113,7 +113,13 @@ export function encodeCode(input: string): Cell[] {
 // 解码：抄录单元带 → 可解读代码
 // ---------------------------------------------------------------------------
 
-export type DecodeErrorKind = 'missing-number-sign' | 'duplicate-number-sign' | 'unknown-cell';
+export type DecodeErrorKind =
+  | 'missing-number-sign'
+  | 'duplicate-number-sign'
+  | 'unknown-cell'
+  | 'incomplete-number'
+  | 'separator-edge'
+  | 'separator-consecutive';
 
 export type DecodeResult =
   | { ok: true; code: string }
@@ -122,36 +128,52 @@ export type DecodeResult =
 /**
  * 逐单元解读。遇到缺少数字标志、数字标志重复或未知点阵时，
  * 不猜测字符，返回首个出错单元的下标。
+ *
+ * 解读结果还须满足房间牌代码结构（与 validateCode 同一套规则）：
+ * 数字标志后须至少跟一个数字，分隔符不得位于首尾，也不得连续出现。
  */
 export function decodeCells(cells: readonly Cell[]): DecodeResult {
   let code = '';
   let inNumber = false;
+  let digitSeen = false; // 当前数字段是否已出现数字
+  let signIndex = -1; // 当前数字段的数字标志下标
+  let prevSeparator = true; // 上一单元为分隔符（开头视同分隔状态，以拒绝首位分隔符）
   for (let i = 0; i < cells.length; i++) {
     const cell = cells[i];
     if (cell === NUMBER_SIGN) {
       if (inNumber) return { ok: false, error: 'duplicate-number-sign', index: i };
       inNumber = true;
+      digitSeen = false;
+      signIndex = i;
+      prevSeparator = false;
       continue;
     }
-    if (cell === HYPHEN_CELL) {
-      code += '-';
+    const separator =
+      cell === HYPHEN_CELL ? '-' : cell === SLASH_CELL ? '/' : cell === SPACE_CELL ? ' ' : null;
+    if (separator !== null) {
+      if (inNumber && !digitSeen) {
+        // 数字标志后未跟数字即遇分隔符：数字段不完整，指向悬空标志
+        return { ok: false, error: 'incomplete-number', index: signIndex };
+      }
+      if (prevSeparator) {
+        return { ok: false, error: i === 0 ? 'separator-edge' : 'separator-consecutive', index: i };
+      }
+      code += separator;
       inNumber = false;
-      continue;
-    }
-    if (cell === SLASH_CELL) {
-      code += '/';
-      inNumber = false;
-      continue;
-    }
-    if (cell === SPACE_CELL) {
-      code += ' ';
-      inNumber = false;
+      prevSeparator = true;
       continue;
     }
     const digit = Object.keys(DIGIT_CELLS).find((d) => DIGIT_CELLS[d] === cell);
     if (digit === undefined) return { ok: false, error: 'unknown-cell', index: i };
     if (!inNumber) return { ok: false, error: 'missing-number-sign', index: i };
     code += digit;
+    digitSeen = true;
+    prevSeparator = false;
+  }
+  // 带尾仍是悬空数字标志或分隔符：数字段不完整 / 末尾分隔符
+  if (inNumber && !digitSeen) return { ok: false, error: 'incomplete-number', index: signIndex };
+  if (prevSeparator && cells.length > 0) {
+    return { ok: false, error: 'separator-edge', index: cells.length - 1 };
   }
   return { ok: true, code };
 }
@@ -255,6 +277,12 @@ export function describeDecodeError(error: DecodeErrorKind, index: number): stri
       return `${at}数字标志重复`;
     case 'unknown-cell':
       return `${at}为未知点阵`;
+    case 'incomplete-number':
+      return `${at}数字段结构不完整：数字标志后须至少跟一个数字`;
+    case 'separator-edge':
+      return `${at}为分隔符：分隔符（连字符、斜杠、空格）不得位于首尾`;
+    case 'separator-consecutive':
+      return `${at}为分隔符：分隔符（连字符、斜杠、空格）不得连续出现`;
   }
 }
 

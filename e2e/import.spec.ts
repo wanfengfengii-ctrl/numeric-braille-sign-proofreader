@@ -114,6 +114,47 @@ test('点位串导入：导入后仍可用键盘、指针、插入与删除修�
   await expect(verdict).toHaveAttribute('data-state', 'match');
 });
 
+test('点位串导入：反向解读拒绝不符合房间牌代码结构的抄录', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('code-input').fill('1');
+  const decodeError = page.getByTestId('decode-error');
+  const verdict = page.getByTestId('verdict');
+
+  // 仅含数字标志：数字段结构不完整，不解读为空代码
+  await importTranscript(page, '3456');
+  await expect(decodeError).toContainText('数字段结构不完整');
+  await expect(decodeError).toContainText('第 1 单元');
+  await expect(page.getByTestId('decoded-code')).toBeHidden();
+  await expect(verdict).toHaveAttribute('data-state', 'decode-error');
+
+  // 连字符开头并后接数字：拒绝首位分隔符
+  await importTranscript(page, '36|3456|1');
+  await expect(decodeError).toContainText('不得位于首尾');
+  await expect(decodeError).toContainText('第 1 单元');
+  await expect(page.getByTestId('decoded-code')).toBeHidden();
+  await expect(verdict).toHaveAttribute('data-state', 'decode-error');
+
+  // 数字段末尾带连字符：报告结构非法
+  await importTranscript(page, '3456|1|36');
+  await expect(decodeError).toContainText('不得位于首尾');
+  await expect(decodeError).toContainText('第 3 单元');
+  await expect(page.getByTestId('decoded-code')).toBeHidden();
+  await expect(verdict).toHaveAttribute('data-state', 'decode-error');
+
+  // 数字间连续包含连字符和斜杠：拒绝连续分隔结构
+  await importTranscript(page, '3456|1|36|34|3456|12');
+  await expect(decodeError).toContainText('不得连续出现');
+  await expect(decodeError).toContainText('第 4 单元');
+  await expect(page.getByTestId('decoded-code')).toBeHidden();
+  await expect(verdict).toHaveAttribute('data-state', 'decode-error');
+
+  // 修正为合法抄录后恢复可解读与一致判定
+  await importTranscript(page, '3456|1');
+  await expect(decodeError).toBeHidden();
+  await expect(page.getByTestId('decoded-code')).toHaveText('1');
+  await expect(verdict).toHaveAttribute('data-state', 'match');
+});
+
 test('点位串导入：失败后可改用手工流程，原手工抄录仍能判定一致', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('code-input').fill('5');

@@ -9,6 +9,7 @@ import {
   cellOf,
   compareCells,
   decodeCells,
+  describeDecodeError,
   describeTranscriptError,
   encodeCode,
   parseTranscript,
@@ -154,6 +155,71 @@ describe('解码：反向解读', () => {
       error: 'unknown-cell',
       index: 2,
     });
+  });
+});
+
+describe('解码：房间牌代码结构', () => {
+  it('仅含数字标志：数字段结构不完整，不解读为空代码', () => {
+    expect(decodeCells([NUMBER_SIGN])).toEqual({
+      ok: false,
+      error: 'incomplete-number',
+      index: 0,
+    });
+  });
+
+  it('数字标志后未跟数字即遇分隔符或带尾：指向悬空标志', () => {
+    expect(decodeCells([NUMBER_SIGN, HYPHEN_CELL, NUMBER_SIGN, D('1')])).toEqual({
+      ok: false,
+      error: 'incomplete-number',
+      index: 0,
+    });
+    expect(decodeCells([NUMBER_SIGN, D('1'), SPACE_CELL, NUMBER_SIGN])).toEqual({
+      ok: false,
+      error: 'incomplete-number',
+      index: 3,
+    });
+  });
+
+  it('首位分隔符：拒绝', () => {
+    for (const sep of [HYPHEN_CELL, SLASH_CELL, SPACE_CELL]) {
+      expect(decodeCells([sep, NUMBER_SIGN, D('1')])).toEqual({
+        ok: false,
+        error: 'separator-edge',
+        index: 0,
+      });
+    }
+  });
+
+  it('末尾分隔符：报告结构非法', () => {
+    for (const sep of [HYPHEN_CELL, SLASH_CELL, SPACE_CELL]) {
+      expect(decodeCells([NUMBER_SIGN, D('1'), sep])).toEqual({
+        ok: false,
+        error: 'separator-edge',
+        index: 2,
+      });
+    }
+  });
+
+  it('连续分隔符：拒绝连续分隔结构', () => {
+    expect(
+      decodeCells([NUMBER_SIGN, D('1'), HYPHEN_CELL, SLASH_CELL, NUMBER_SIGN, D('2')]),
+    ).toEqual({ ok: false, error: 'separator-consecutive', index: 3 });
+    expect(decodeCells([NUMBER_SIGN, D('1'), SPACE_CELL, HYPHEN_CELL, NUMBER_SIGN, D('2')])).toEqual(
+      { ok: false, error: 'separator-consecutive', index: 3 },
+    );
+  });
+
+  it('空单元带仍解读为空代码', () => {
+    expect(decodeCells([])).toEqual({ ok: true, code: '' });
+  });
+
+  it('结构性错误的文案', () => {
+    expect(describeDecodeError('incomplete-number', 0)).toContain('第 1 单元');
+    expect(describeDecodeError('incomplete-number', 0)).toContain('数字段结构不完整');
+    expect(describeDecodeError('separator-edge', 2)).toContain('第 3 单元');
+    expect(describeDecodeError('separator-edge', 2)).toContain('不得位于首尾');
+    expect(describeDecodeError('separator-consecutive', 3)).toContain('第 4 单元');
+    expect(describeDecodeError('separator-consecutive', 3)).toContain('不得连续出现');
   });
 });
 
