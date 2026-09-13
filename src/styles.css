@@ -26,6 +26,30 @@ header h1 {
   margin: 0 0 0.4rem;
 }
 
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.keycheck-entry {
+  padding: 0.45rem 1rem;
+  border: 2px solid #2563eb;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.keycheck-entry:hover {
+  background: #dbeafe;
+}
+
 .spec {
   margin: 0;
   font-size: 0.82rem;
@@ -348,4 +372,115 @@ button.dot:focus-visible {
   border-radius: 8px;
   min-height: 1.5em;
   white-space: pre;
+}
+
+/* 六点键盘检查对话框 */
+.keycheck-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.keycheck-panel {
+  width: min(520px, calc(100vw - 2rem));
+  background: #fff;
+  border: 2px solid #2563eb;
+  border-radius: 12px;
+  padding: 1.4rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.35);
+}
+
+.keycheck-panel:focus {
+  outline: none;
+}
+
+.keycheck-prompt {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.keycheck-prompt strong {
+  font-size: 1.6rem;
+  color: #1d4ed8;
+}
+
+.keycheck-failed {
+  color: #b91c1c;
+}
+
+.keycheck-passed {
+  color: #166534;
+}
+
+.keycheck-dots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 0.6rem;
+}
+
+.keycheck-dot {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid #94a3b8;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.keycheck-dot.current {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+
+.keycheck-dot.done {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+
+.keycheck-reason {
+  font-size: 0.98rem;
+}
+
+.keycheck-primary {
+  align-self: center;
+  padding: 0.5rem 1.4rem;
+  border: 2px solid #2563eb;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.keycheck-primary:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.keycheck-overlay[data-state='passed'] .keycheck-primary {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
+.keycheck-overlay[data-state='passed'] .keycheck-primary:hover {
+  background: #15803d;
+  border-color: #15803d;
 }

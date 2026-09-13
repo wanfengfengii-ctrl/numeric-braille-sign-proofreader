@@ -31,6 +31,7 @@ import {
   undoEdit,
 } from './history';
 import { DotGrid } from './DotGrid';
+import { KeyboardCheckDialog } from './KeyboardCheckDialog';
 
 /** 本地草稿的 localStorage 键 */
 const DRAFT_STORAGE_KEY = 'braille-proofing-station/draft/v1';
@@ -82,6 +83,9 @@ export default function App() {
   const [transcript, setTranscript] = useState('');
   const [transcriptError, setTranscriptError] = useState<TranscriptError | null>(null);
   const [draftPrompt, setDraftPrompt] = useState<DraftPrompt>(readStoredDraft);
+  // 六点键盘检查以独立对话框运行：会话状态隔离在校查模块内，
+  // 不触碰明眼稿、Cell 数组、点位串输入、判定、历史与草稿
+  const [keyCheckOpen, setKeyCheckOpen] = useState(false);
   const cellRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const validation = useMemo(() => validateCode(input), [input]);
@@ -265,7 +269,17 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>电梯厅数字房间牌 · 六点盲文校样台</h1>
+        <div className="header-row">
+          <h1>电梯厅数字房间牌 · 六点盲文校样台</h1>
+          <button
+            type="button"
+            className="keycheck-entry"
+            data-testid="start-keycheck"
+            onClick={() => setKeyCheckOpen(true)}
+          >
+            开始按键检查
+          </button>
+        </div>
         <p className="spec">
           点位：左列自上而下 1、2、3，右列 4、5、6 ｜ 数字标志 3456 ｜ 数字 1–0：1、12、14、145、15、124、1245、125、24、245 ｜
           连字符 36 ｜ 斜杠 34 ｜ 空格为空单元
@@ -465,6 +479,8 @@ export default function App() {
           )}
         </section>
       </main>
+
+      {keyCheckOpen && <KeyboardCheckDialog onClose={() => setKeyCheckOpen(false)} />}
     </div>
   );
 }
