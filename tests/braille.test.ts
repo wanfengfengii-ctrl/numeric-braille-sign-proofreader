@@ -9,7 +9,9 @@ import {
   cellOf,
   compareCells,
   decodeCells,
+  describeTranscriptError,
   encodeCode,
+  parseTranscript,
   validateCode,
 } from '../src/braille';
 
@@ -152,6 +154,111 @@ describe('解码：反向解读', () => {
       error: 'unknown-cell',
       index: 2,
     });
+  });
+});
+
+describe('点位串导入：文本格 → Cell 映射', () => {
+  it('单格点位串映射为位掩码', () => {
+    expect(parseTranscript('3456')).toEqual({ ok: true, cells: [NUMBER_SIGN] });
+    expect(parseTranscript('1')).toEqual({ ok: true, cells: [D('1')] });
+    expect(parseTranscript('12')).toEqual({ ok: true, cells: [D('2')] });
+    expect(parseTranscript('36')).toEqual({ ok: true, cells: [HYPHEN_CELL] });
+    expect(parseTranscript('34')).toEqual({ ok: true, cells: [SLASH_CELL] });
+  });
+
+  it('下划线为空白盲文格（空单元）', () => {
+    expect(parseTranscript('_')).toEqual({ ok: true, cells: [SPACE_CELL] });
+    // 点位串写的是点位而非数字：格 “2” 即点 2，对应掩码 0b000010
+    expect(parseTranscript('1|_|2')).toEqual({ ok: true, cells: [D('1'), SPACE_CELL, cellOf([2])] });
+  });
+
+  it('多格点位串按竖线拆分，与 encodeCode 的目标单元带一致', () => {
+    const parsed = parseTranscript('3456|1|12|36|3456|14|34|3456|145|_|3456|15');
+    expect(parsed).toEqual({ ok: true, cells: encodeCode('12-3/4 5') });
+  });
+
+  it('解析结果可直接进入 decodeCells 与 compareCells', () => {
+    const parsed = parseTranscript('3456|1|12|36|3456|14|34|3456|145|_|3456|15');
+    if (!parsed.ok) throw new Error('应解析成功');
+    expect(decodeCells(parsed.cells)).toEqual({ ok: true, code: '12-3/4 5' });
+    expect(compareCells(encodeCode('12-3/4 5'), parsed.cells)).toEqual({ status: 'match' });
+  });
+
+  it('忽略整体首尾空白（复制粘贴常带换行）', () => {
+    expect(parseTranscript('  3456|1\n')).toEqual({ ok: true, cells: [NUMBER_SIGN, D('1')] });
+  });
+});
+
+describe('点位串导入：结构化错误', () => {
+  it('空串与纯空白', () => {
+    expect(parseTranscript('')).toEqual({ ok: false, error: { kind: 'empty' } });
+    expect(parseTranscript('  \n ')).toEqual({ ok: false, error: { kind: 'empty' } });
+  });
+
+  it('竖线位于首尾或形成空格段：指出缺失内容的文本格', () => {
+    expect(parseTranscript('|1')).toEqual({ ok: false, error: { kind: 'empty-segment', index: 0 } });
+    expect(parseTranscript('1|')).toEqual({ ok: false, error: { kind: 'empty-segment', index: 1 } });
+    expect(parseTranscript('1||12')).toEqual({ ok: false, error: { kind: 'empty-segment', index: 1 } });
+    expect(parseTranscript('1|12||3456')).toEqual({
+      ok: false,
+      error: { kind: 'empty-segment', index: 2 },
+    });
+  });
+
+  it('越界点：0、7–9、字母及混排的下划线', () => {
+    expect(parseTranscript('17')).toEqual({
+      ok: false,
+      error: { kind: 'dot-out-of-range', index: 0, char: '7' },
+    });
+    expect(parseTranscript('10')).toEqual({
+      ok: false,
+      error: { kind: 'dot-out-of-range', index: 0, char: '0' },
+    });
+    expect(parseTranscript('3456|1a')).toEqual({
+      ok: false,
+      error: { kind: 'dot-out-of-range', index: 1, char: 'a' },
+    });
+    expect(parseTranscript('_1')).toEqual({
+      ok: false,
+      error: { kind: 'dot-out-of-range', index: 0, char: '_' },
+    });
+  });
+
+  it('重复点：指出文本格与点位', () => {
+    expect(parseTranscript('11')).toEqual({
+      ok: false,
+      error: { kind: 'dot-duplicate', index: 0, dot: '1' },
+    });
+    expect(parseTranscript('3456|122')).toEqual({
+      ok: false,
+      error: { kind: 'dot-duplicate', index: 1, dot: '2' },
+    });
+  });
+
+  it('乱序：点位未按升序', () => {
+    expect(parseTranscript('21')).toEqual({ ok: false, error: { kind: 'dot-unsorted', index: 0 } });
+    expect(parseTranscript('1|143')).toEqual({ ok: false, error: { kind: 'dot-unsorted', index: 1 } });
+  });
+
+  it('首个出错格即返回，不继续解析后续格', () => {
+    expect(parseTranscript('3456|99|21')).toEqual({
+      ok: false,
+      error: { kind: 'dot-out-of-range', index: 1, char: '9' },
+    });
+  });
+});
+
+describe('点位串导入：错误文案', () => {
+  it('指出第几个文本格及原因', () => {
+    expect(describeTranscriptError({ kind: 'empty' })).toContain('为空');
+    expect(describeTranscriptError({ kind: 'empty-segment', index: 1 })).toContain('第 2 文本格');
+    expect(describeTranscriptError({ kind: 'dot-out-of-range', index: 0, char: '7' })).toContain(
+      '越界点',
+    );
+    expect(describeTranscriptError({ kind: 'dot-duplicate', index: 2, dot: '3' })).toContain(
+      '第 3 文本格',
+    );
+    expect(describeTranscriptError({ kind: 'dot-unsorted', index: 0 })).toContain('乱序');
   });
 });
 

@@ -219,6 +219,57 @@ button.dot:focus-visible {
   gap: 0.5rem;
 }
 
+.import-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.import-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.import-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.95rem;
+  padding: 0.4rem 0.55rem;
+  border: 2px solid #94a3b8;
+  border-radius: 8px;
+  letter-spacing: 0.04em;
+}
+
+.import-row input:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  border-color: #2563eb;
+}
+
+.import-row input[aria-invalid='true'] {
+  border-color: #dc2626;
+}
+
+.import-row button {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.import-row button:hover {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
 .toolbar button {
   padding: 0.4rem 0.9rem;
   border: 1px solid #94a3b8;

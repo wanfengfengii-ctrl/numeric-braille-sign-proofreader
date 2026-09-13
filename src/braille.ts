@@ -157,6 +157,60 @@ export function decodeCells(cells: readonly Cell[]): DecodeResult {
 }
 
 // ---------------------------------------------------------------------------
+// 点位串导入：竖线分隔文本 → 抄录单元带
+// ---------------------------------------------------------------------------
+
+export type TranscriptError =
+  | { kind: 'empty' }
+  | { kind: 'empty-segment'; index: number }
+  | { kind: 'dot-out-of-range'; index: number; char: string }
+  | { kind: 'dot-duplicate'; index: number; dot: string }
+  | { kind: 'dot-unsorted'; index: number };
+
+export type TranscriptParse = { ok: true; cells: Cell[] } | { ok: false; error: TranscriptError };
+
+/**
+ * 解析供应商压点设备复制的竖线分隔点位串。
+ *
+ * 每格只接受升序且不重复的 1–6（如 `124`），空白盲文格写作下划线 `_`；
+ * 竖线不得位于首尾或形成空格段。任一文本格出错即整体失败，
+ * 返回首个出错格的下标（0 起）与结构化原因，调用方据此保留原抄录。
+ */
+export function parseTranscript(text: string): TranscriptParse {
+  const trimmed = text.trim();
+  if (trimmed === '') return { ok: false, error: { kind: 'empty' } };
+  const segments = trimmed.split('|');
+  const cells: Cell[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg === '') return { ok: false, error: { kind: 'empty-segment', index: i } };
+    if (seg === '_') {
+      cells.push(SPACE_CELL);
+      continue;
+    }
+    let cell = 0;
+    let prev = 0;
+    for (const ch of seg) {
+      if (ch < '1' || ch > '6') {
+        return { ok: false, error: { kind: 'dot-out-of-range', index: i, char: ch } };
+      }
+      const dot = Number(ch) as Dot;
+      const mask = dotMask(dot);
+      if ((cell & mask) !== 0) {
+        return { ok: false, error: { kind: 'dot-duplicate', index: i, dot: ch } };
+      }
+      if (dot < prev) {
+        return { ok: false, error: { kind: 'dot-unsorted', index: i } };
+      }
+      prev = dot;
+      cell |= mask;
+    }
+    cells.push(cell);
+  }
+  return { ok: true, cells };
+}
+
+// ---------------------------------------------------------------------------
 // 比较：以点集合为准
 // ---------------------------------------------------------------------------
 
@@ -201,5 +255,20 @@ export function describeDecodeError(error: DecodeErrorKind, index: number): stri
       return `${at}数字标志重复`;
     case 'unknown-cell':
       return `${at}为未知点阵`;
+  }
+}
+
+export function describeTranscriptError(error: TranscriptError): string {
+  switch (error.kind) {
+    case 'empty':
+      return '点位串为空：请粘贴以竖线分隔的点位串';
+    case 'empty-segment':
+      return `第 ${error.index + 1} 文本格缺失内容：竖线不得位于首尾或形成空格段`;
+    case 'dot-out-of-range':
+      return `第 ${error.index + 1} 文本格含越界点“${error.char}”：每格只接受点位 1–6，空白格写作下划线 _`;
+    case 'dot-duplicate':
+      return `第 ${error.index + 1} 文本格重复点 ${error.dot}：每格点位不得重复`;
+    case 'dot-unsorted':
+      return `第 ${error.index + 1} 文本格点位乱序：每格点位须按 1–6 升序填写`;
   }
 }

@@ -2,12 +2,15 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import {
   type Cell,
   type Dot,
+  type TranscriptError,
   compareCells,
   decodeCells,
   describeDecodeError,
   describeInputError,
+  describeTranscriptError,
   dotMask,
   encodeCode,
+  parseTranscript,
   validateCode,
 } from './braille';
 import { DotGrid } from './DotGrid';
@@ -23,6 +26,8 @@ export default function App() {
   const [input, setInput] = useState('');
   const [cells, setCells] = useState<Cell[]>([]);
   const [focusIdx, setFocusIdx] = useState<number | null>(null);
+  const [transcript, setTranscript] = useState('');
+  const [transcriptError, setTranscriptError] = useState<TranscriptError | null>(null);
   const cellRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const validation = useMemo(() => validateCode(input), [input]);
@@ -101,6 +106,18 @@ export default function App() {
   const clearCells = () => {
     setCells([]);
     setFocusIdx(null);
+  };
+
+  // 点位串导入：成功则一次性替换当前抄录；失败保留原抄录与判定
+  const importTranscript = () => {
+    const parsed = parseTranscript(transcript);
+    if (!parsed.ok) {
+      setTranscriptError(parsed.error);
+      return;
+    }
+    setCells(parsed.cells);
+    setFocusIdx(null);
+    setTranscriptError(null);
   };
 
   const onCellKeyDown = (index: number) => (e: KeyboardEvent<HTMLDivElement>) => {
@@ -195,6 +212,38 @@ export default function App() {
             </button>
           </div>
           <p className="hint">点击圆点，或聚焦单元后按 1–6 切换点位；←/→ 移动，Enter 插入，Backspace 删除。</p>
+          <div className="import-area">
+            <label className="field-label" htmlFor="transcript-input">
+              点位串导入
+            </label>
+            <div className="import-row">
+              <input
+                id="transcript-input"
+                data-testid="transcript-input"
+                value={transcript}
+                onChange={(e) => {
+                  setTranscript(e.target.value);
+                  setTranscriptError(null);
+                }}
+                placeholder="如 3456|1|12|36|3456|14（空白格写作 _）"
+                autoComplete="off"
+                spellCheck={false}
+                aria-invalid={transcriptError !== null || undefined}
+                aria-describedby="transcript-hint"
+              />
+              <button type="button" data-testid="import-transcript" onClick={importTranscript}>
+                导入抄录
+              </button>
+            </div>
+            <p id="transcript-hint" className="hint">
+              粘贴压点设备复制的竖线分隔点位串，每格为升序不重复的 1–6；导入成功将一次性替换当前抄录，失败则保留原抄录。
+            </p>
+            {transcriptError && (
+              <p role="alert" className="error" data-testid="transcript-error">
+                {describeTranscriptError(transcriptError)}
+              </p>
+            )}
+          </div>
           {cells.length === 0 ? (
             <p className="hint">尚无抄录单元，请点击“添加单元”开始抄录。</p>
           ) : (
